@@ -44,6 +44,41 @@ export class NebiusAIService {
     this.apiKey = process.env.NEBIUS_API_KEY || 'eyJhbGciOiJIUzI1NiIsImtpZCI6IlV6SXJWd1h0dnprLVRvdzlLZWstc0M1akptWXBvX1VaVkxUZlpnMDRlOFUiLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJnb29nbGUtb2F1dGgyfDExNDE3OTYwNTEwMjcyNDQ2MjIxNyIsInNjb3BlIjoib3BlbmlkIG9mZmxpbmVfYWNjZXNzIiwiaXNzIjoiYXBpX2tleV9pc3N1ZXIiLCJhdWQiOlsiaHR0cHM6Ly9uZWJpdXMtaW5mZXJlbmNlLmV1LmF1dGgwLmNvbS9hcGkvdjIvIl0sImV4cCI6MTkxMjY3MDg1MCwidXVpZCI6IjE5OWE1YWM5LTFiMjQtNDQ1Zi1hNDFmLTJjNGE0MDdlMzU5MCIsIm5hbWUiOiJNQ1AiLCJleHBpcmVzX2F0IjoiMjAzMC0wOC0xMVQwOToyNzozMCswMDAwIn0.ajJ9NJVIqpQSb6so-xJsSn0Img9EYCO8XTopZUYuHRA';
   }
 
+  /**
+   * NEW: Analyze with custom prompt for whale detection
+   */
+  async analyzeWithPrompt(prompt: string, maxTokens: number = 2000): Promise<any> {
+    try {
+      console.log('🐋 Nebius AI analyzing with whale detection prompt...');
+      
+      const messages = [
+        {
+          role: "user",
+          content: prompt
+        }
+      ];
+
+      const response = await this.makeRequest(messages, this.model, maxTokens);
+      const content = response.choices[0]?.message?.content;
+
+      if (!content) {
+        throw new Error('No content in Nebius AI response');
+      }
+
+      // Try to parse as JSON
+      try {
+        return JSON.parse(content);
+      } catch (parseError) {
+        console.warn('⚠️ Nebius AI response is not valid JSON, returning raw content');
+        return content;
+      }
+
+    } catch (error) {
+      console.error('❌ Error in Nebius AI whale analysis:', error);
+      throw error;
+    }
+  }
+
   private async makeRequest(messages: any[], useModel?: string, maxTokens: number = 500): Promise<NebiusAIResponse> {
     const requestBody = {
       model: useModel || this.model,

@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import WhaleManipulationPanel from '@/components/whale-manipulation-panel';
+import MarketHealthIndicators from '@/components/market-health-indicators';
+import EnhancedPositionManager from '@/components/enhanced-position-manager';
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -262,6 +265,107 @@ export default function Home() {
             ) : (
               <p>Loading AI analysis...</p>
             )}
+          </div>
+
+          {/* Enhanced Whale Detection Panel */}
+          <WhaleManipulationPanel aiAnalysis={aiAnalysis} />
+
+          {/* Market Health Indicators */}
+          <MarketHealthIndicators 
+            pricing={pricing} 
+            aiAnalysis={aiAnalysis}
+            balance={balance}
+          />
+
+          {/* Enhanced Position Manager */}
+          <EnhancedPositionManager 
+            balance={balance}
+            aiAnalysis={aiAnalysis}
+          />
+
+          {/* Multi-Timeframe Analysis Dashboard */}
+          <div style={{ 
+            padding: '20px', 
+            margin: '20px 0', 
+            backgroundColor: '#1e293b', 
+            borderRadius: '8px',
+            border: '1px solid #334155'
+          }}>
+            <h3>📊 Multi-Timeframe Analysis</h3>
+            <div id="multi-timeframe-container">
+              <p style={{ color: '#cbd5e1', fontSize: '14px' }}>
+                Advanced multi-timeframe analysis provides comprehensive market insights across 1m, 5m, 15m, 1h, 4h, and 1d timeframes.
+                This helps identify high-probability trading opportunities with better risk management.
+              </p>
+              <button 
+                onClick={() => {
+                  window.open('/api/ai/multi-timeframe?symbol=BTCUSDT&strategy=true', '_blank');
+                }}
+                style={{
+                  marginTop: '10px',
+                  padding: '8px 16px',
+                  backgroundColor: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                View Multi-Timeframe Analysis
+              </button>
+            </div>
+          </div>
+
+          {/* Sentiment Analysis Dashboard */}
+          <div style={{ 
+            padding: '20px', 
+            margin: '20px 0', 
+            backgroundColor: '#1e293b', 
+            borderRadius: '8px',
+            border: '1px solid #334155'
+          }}>
+            <h3>📰 Market Sentiment Analysis</h3>
+            <div id="sentiment-container">
+              <p style={{ color: '#cbd5e1', fontSize: '14px' }}>
+                AI-powered sentiment analysis combines news articles and social media posts to gauge market mood.
+                This helps identify sentiment-driven price movements and adjust position sizing accordingly.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginTop: '15px' }}>
+                <button 
+                  onClick={() => {
+                    window.open('/api/ai/sentiment?symbol=BTCUSDT&timeframe=4h&strategy=true', '_blank');
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#10b981',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  📰 View News Sentiment
+                </button>
+                <button 
+                  onClick={() => {
+                    window.open('/api/ai/sentiment?symbol=ETHUSDT&timeframe=4h&strategy=true', '_blank');
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#8b5cf6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  💬 View Social Sentiment
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* News */}

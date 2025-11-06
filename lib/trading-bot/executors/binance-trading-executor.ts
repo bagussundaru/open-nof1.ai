@@ -1,6 +1,16 @@
-import { BinanceFuturesClient, getBinanceClient } from '@/lib/exchanges/binance-futures-client';
-import { getNebiusAIService } from '@/lib/ai/nebius-ai-service';
-import crypto from 'crypto';
+import { BinanceFuturesClient, getBinanceClient } from '../../exchanges/binance-futures-client';
+import { getNebiusAIService } from '../../ai/nebius-ai-service';
+import { EnhancedDataCollector } from '../../market-data/enhanced-data-collector';
+import { generateWhaleDetectionPrompt } from '../../ai/whale-detection-prompt';
+import { 
+  ENHANCED_TRADING_CONFIG, 
+  EnhancedTradingConfig, 
+  getDynamicLeverage, 
+  getDynamicPositionSize, 
+  shouldBlockTrading 
+} from '../config/enhanced-trading-config';
+import { EnhancedMarketData, WhaleManipulationAnalysis, EnhancedTradingDecision } from '../../market-data/enhanced-market-data';
+import * as crypto from 'crypto';
 
 export interface TradingDecision {
   symbol: string;
@@ -80,20 +90,15 @@ export interface PositionRisk {
 export class BinanceTradingExecutor {
   private binanceClient: BinanceFuturesClient;
   private nebiusAI: any;
+  private enhancedDataCollector: EnhancedDataCollector;
   private isActive: boolean = false;
   private activePositions: Map<string, PositionRisk> = new Map();
-  private tradingConfig = {
-    maxPositions: 5,
-    riskPerTrade: 0.02, // 2% of account balance per trade
-    maxLeverage: 10,
-    minConfidence: 0.60, // Lowered to 60% to allow 70% confidence trades
-    stopLossPercent: 0.05, // 5% stop loss
-    takeProfitPercent: 0.10, // 10% take profit
-  };
+  private tradingConfig = ENHANCED_TRADING_CONFIG;
 
   constructor() {
     this.binanceClient = getBinanceClient();
     this.nebiusAI = getNebiusAIService();
+    this.enhancedDataCollector = new EnhancedDataCollector();
   }
 
   /**
@@ -206,12 +211,12 @@ export class BinanceTradingExecutor {
         // Update active positions
         await this.updateActivePositions();
         
-        // Get AI analysis for all trading pairs
-        const decisions = await this.getAITradingDecisions(tradingPairs);
+        // Get Enhanced AI analysis with whale detection for all trading pairs
+        const whaleAnalyses = await this.getEnhancedAITradingDecisions(tradingPairs);
         
-        // Process each trading decision
-        for (const decision of decisions) {
-          await this.processTradingDecision(decision);
+        // Process each whale-aware trading decision
+        for (const whaleAnalysis of whaleAnalyses) {
+          await this.processEnhancedTradingDecision(whaleAnalysis);
         }
         
         // Check existing positions for take profit/stop loss
@@ -240,63 +245,55 @@ export class BinanceTradingExecutor {
   }
 
   /**
-   * Get AI trading decisions from Nebius AI
+   * Get Enhanced AI trading decisions with Whale Detection
    */
-  private async getAITradingDecisions(symbols: string[]): Promise<TradingDecision[]> {
-    const decisions: TradingDecision[] = [];
+  private async getEnhancedAITradingDecisions(symbols: string[]): Promise<EnhancedTradingDecision[]> {
+    const decisions: EnhancedTradingDecision[] = [];
     
     for (const symbol of symbols) {
       try {
-        // Get current market data
-        const ticker = await this.binanceClient.getTickerPrice(symbol);
-        const price = parseFloat(ticker[0].price);
+        console.log(`🐋 Collecting enhanced market data for ${symbol}...`);
         
-        // Get 24hr ticker for additional data
-        const ticker24hr = await this.binanceClient.get24hrTicker(symbol);
-        const priceChange = parseFloat(ticker24hr[0].priceChangePercent);
-        const volume = parseFloat(ticker24hr[0].volume);
+        // Collect comprehensive market data
+        const enhancedMarketData = await this.enhancedDataCollector.collectEnhancedMarketData(symbol);
         
-        // Create market data for AI analysis
-        const marketData = {
-          symbol,
-          price,
-          change24h: priceChange,
-          volume24h: volume,
-          timestamp: new Date().toISOString()
-        };
+        // Generate whale detection prompt
+        const whalePrompt = generateWhaleDetectionPrompt(enhancedMarketData);
         
-        // Get AI analysis
-        const aiAnalysis = await this.nebiusAI.analyzeCryptocurrency(symbol, {
-          price,
-          change24h: priceChange,
-          volume24h: volume,
-          high24h: price * 1.05, // Approximate high
-          low24h: price * 0.95   // Approximate low
-        });
+        // Get AI analysis with whale detection
+        console.log(`🤖 Analyzing ${symbol} with Nebius AI whale detection...`);
+        const aiResponse = await this.nebiusAI.analyzeWithPrompt(whalePrompt);
         
-        if (aiAnalysis) {
-          const decision: TradingDecision = {
-            symbol,
-            action: aiAnalysis.action.toUpperCase(),
-            confidence: aiAnalysis.confidence,
-            reasoning: aiAnalysis.reasoning,
-            technicalIndicators: aiAnalysis.technicalIndicators || {
-              rsi: 50,
-              trend: 'NEUTRAL',
-              support: price * 0.95,
-              resistance: price * 1.05
-            },
-            riskAssessment: aiAnalysis.riskAssessment || {
-              volatility: 'MEDIUM',
-              stopLoss: price * 0.95,
-              takeProfit: price * 1.10,
-              recommendedLeverage: 2
-            },
-            modelUsed: aiAnalysis.modelUsed || 'Nebius-meta-llama/Meta-Llama-3.1-8B-Instruct',
-            timestamp: new Date().toISOString()
-          };
+        if (aiResponse) {
+          // Parse AI response (should be JSON)
+          let whaleAnalysis: EnhancedTradingDecision;
           
-          decisions.push(decision);
+          try {
+            whaleAnalysis = typeof aiResponse === 'string' ? JSON.parse(aiResponse) : aiResponse;
+          } catch (parseError) {
+            console.error(`❌ Failed to parse AI response for ${symbol}:`, parseError);
+            continue;
+          }
+
+          // Add market data to analysis for validation
+          (whaleAnalysis as any).marketData = enhancedMarketData;
+          
+          // Validate and enhance AI analysis with default values if missing
+          if (!whaleAnalysis.whaleManipulation) {
+            whaleAnalysis.whaleManipulation = {
+              setupScore: 0,
+              triggerScore: 0,
+              executionScore: 0,
+              currentPhase: 'NONE',
+              reasoning: 'Default whale detection analysis',
+              risk: 'LOW'
+            };
+          }
+
+          console.log(`🎯 ${whaleAnalysis.symbol} Whale Analysis: Setup=${whaleAnalysis.whaleManipulation.setupScore}%, Trigger=${whaleAnalysis.whaleManipulation.triggerScore}%, Execution=${whaleAnalysis.whaleManipulation.executionScore}%`);
+          console.log(`📊 ${whaleAnalysis.symbol} Phase: ${whaleAnalysis.whaleManipulation.currentPhase}, Risk: ${whaleAnalysis.whaleManipulation.risk}`);
+          
+          decisions.push(whaleAnalysis);
         }
         
       } catch (error) {
@@ -308,7 +305,72 @@ export class BinanceTradingExecutor {
   }
 
   /**
-   * Process individual trading decision
+   * Process Enhanced Trading Decision with Whale Protection
+   */
+  private async processEnhancedTradingDecision(decision: EnhancedTradingDecision): Promise<void> {
+    try {
+      const symbol = decision.symbol;
+      
+      console.log(`🐋 Processing enhanced decision for ${decision.symbol}: ${decision.action} (${(decision.confidence * 100).toFixed(1)}% confidence)`);
+      console.log(`🚨 Whale Risk: ${decision.whaleManipulation.risk} | Phase: ${decision.whaleManipulation.currentPhase}`);
+
+      // ===== STEP 1: WHALE MANIPULATION CHECKS =====
+      
+      // Check if trading should be blocked
+      const blockCheck = shouldBlockTrading(
+        decision.whaleManipulation.setupScore,
+        decision.whaleManipulation.triggerScore,
+        decision.whaleManipulation.executionScore,
+        0, // fundingRate - would need to get from market data
+        1, // longShortRatio - would need to get from market data
+        0  // liquidationAmount - would need to get from market data
+      );
+      
+      if (blockCheck.shouldBlock) {
+        console.log(`🚫 TRADING BLOCKED for ${symbol}: ${blockCheck.reason}`);
+        
+        if (blockCheck.forceClose) {
+          console.log(`🚨 FORCE CLOSING ALL POSITIONS: ${blockCheck.reason}`);
+          await this.closeAllPositions(`Whale execution detected: ${blockCheck.reason}`);
+        }
+        return;
+      }
+
+      // ===== STEP 2: ENHANCED ENTRY FILTERS =====
+      
+      // Basic entry validation (simplified)
+      if (decision.confidence < ENHANCED_TRADING_CONFIG.minConfidence) {
+        console.log(`⚠️ Entry filter failed for ${symbol}: Low confidence (${(decision.confidence * 100).toFixed(1)}%)`);
+        return;
+      }
+
+      // Check confidence threshold
+      if (decision.confidence < this.tradingConfig.minConfidence) {
+        console.log(`⚠️ Skipping ${symbol}: Confidence ${(decision.confidence * 100).toFixed(1)}% below threshold ${(this.tradingConfig.minConfidence * 100)}%`);
+        return;
+      }
+
+      // ===== STEP 3: POSITION MANAGEMENT =====
+      
+      const existingPosition = this.activePositions.get(symbol);
+      
+      if (decision.action === 'BUY' && !existingPosition) {
+        await this.openEnhancedLongPosition(decision);
+      } else if (decision.action === 'SELL' && !existingPosition) {
+        await this.openEnhancedShortPosition(decision);
+      } else if (decision.action === 'CLOSE_ALL') {
+        await this.closeAllPositions(`AI recommended close all: ${decision.reasoning}`);
+      } else if (decision.action === 'HOLD') {
+        console.log(`📊 Holding position for ${symbol}: ${decision.reasoning}`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ Error processing enhanced decision for ${decision.symbol}:`, error);
+    }
+  }
+
+  /**
+   * Process individual trading decision (Legacy method for compatibility)
    */
   private async processTradingDecision(decision: TradingDecision): Promise<void> {
     try {
@@ -339,7 +401,150 @@ export class BinanceTradingExecutor {
   }
 
   /**
-   * Open long position (BUY)
+   * Open Enhanced Long Position with Whale Protection
+   */
+  private async openEnhancedLongPosition(decision: EnhancedTradingDecision): Promise<void> {
+    try {
+      const symbol = decision.symbol;
+      
+      // Check if we can open more positions
+      if (this.activePositions.size >= this.tradingConfig.maxPositions) {
+        console.log(`⚠️ Maximum positions (${this.tradingConfig.maxPositions}) reached, skipping ${symbol}`);
+        return;
+      }
+      
+      // Get account balance
+      const balance = await this.binanceClient.getFormattedBalance();
+      const availableBalance = balance.availableBalance;
+      
+      // Calculate dynamic position size based on whale risk
+      const dynamicPositionSize = getDynamicPositionSize(
+        decision.riskAssessment.volatility,
+        decision.whaleManipulation.currentPhase,
+        availableBalance
+      );
+      
+      // Calculate dynamic leverage based on whale risk
+      const dynamicLeverage = Math.min(
+        getDynamicLeverage(decision.whaleManipulation.currentPhase),
+        decision.recommendedLeverage || 2,
+        this.tradingConfig.maxLeverage
+      );
+      
+      // Get current price
+      const ticker = await this.binanceClient.getTickerPrice(symbol);
+      const currentPrice = parseFloat(ticker[0].price);
+      
+      // Calculate quantity with dynamic sizing
+      const notionalValue = dynamicPositionSize * dynamicLeverage;
+      const quantity = (notionalValue / currentPrice).toFixed(3);
+      
+      console.log(`📈 Opening ENHANCED LONG position for ${symbol}:`);
+      console.log(`   Price: ${currentPrice}`);
+      console.log(`   Quantity: ${quantity}`);
+      console.log(`   Dynamic Leverage: ${dynamicLeverage}x (Whale Risk: ${decision.whaleManipulation.risk})`);
+      console.log(`   Dynamic Position Size: ${dynamicPositionSize.toFixed(2)} (Phase: ${decision.whaleManipulation.currentPhase})`);
+      console.log(`   Whale Scores: Setup=${decision.whaleManipulation.setupScore}%, Trigger=${decision.whaleManipulation.triggerScore}%`);
+      console.log(`   Reasoning: ${decision.reasoning}`);
+      
+      // Set leverage
+      await this.setLeverage(symbol, dynamicLeverage);
+      
+      // Place market buy order
+      const order = await this.placeOrder({
+        symbol: symbol,
+        side: 'BUY',
+        type: 'MARKET',
+        quantity: quantity
+      });
+      
+      console.log(`✅ ENHANCED LONG position opened for ${symbol}:`, {
+        orderId: order.orderId,
+        executedQty: order.executedQty,
+        avgPrice: order.avgPrice,
+        whaleRisk: decision.whaleManipulation.risk,
+        leverage: dynamicLeverage
+      });
+      
+      // Set enhanced stop loss and take profit
+      await this.setEnhancedStopLossAndTakeProfit(decision, parseFloat(order.avgPrice), 'LONG');
+      
+    } catch (error) {
+      console.error(`❌ Error opening enhanced LONG position for ${decision.symbol}:`, error);
+    }
+  }
+
+  /**
+   * Open Enhanced Short Position with Whale Protection
+   */
+  private async openEnhancedShortPosition(decision: EnhancedTradingDecision): Promise<void> {
+    try {
+      const symbol = decision.symbol;
+      
+      // Check if we can open more positions
+      if (this.activePositions.size >= this.tradingConfig.maxPositions) {
+        console.log(`⚠️ Maximum positions (${this.tradingConfig.maxPositions}) reached, skipping ${symbol}`);
+        return;
+      }
+      
+      // Get account balance
+      const balance = await this.binanceClient.getFormattedBalance();
+      const availableBalance = balance.availableBalance;
+      
+      // Calculate dynamic position size and leverage
+      const dynamicPositionSize = getDynamicPositionSize(
+        decision.riskAssessment.volatility,
+        decision.whaleManipulation.currentPhase,
+        availableBalance
+      );
+      const dynamicLeverage = Math.min(
+        getDynamicLeverage(decision.whaleManipulation.currentPhase),
+        decision.recommendedLeverage || 2,
+        this.tradingConfig.maxLeverage
+      );
+      
+      // Get current price
+      const ticker = await this.binanceClient.getTickerPrice(symbol);
+      const currentPrice = parseFloat(ticker[0].price);
+      
+      // Calculate quantity
+      const notionalValue = dynamicPositionSize * dynamicLeverage;
+      const quantity = (notionalValue / currentPrice).toFixed(3);
+      
+      console.log(`📉 Opening ENHANCED SHORT position for ${symbol}:`);
+      console.log(`   Price: ${currentPrice}`);
+      console.log(`   Quantity: ${quantity}`);
+      console.log(`   Dynamic Leverage: ${dynamicLeverage}x (Whale Risk: ${decision.whaleManipulation.risk})`);
+      console.log(`   Reasoning: ${decision.reasoning}`);
+      
+      // Set leverage
+      await this.setLeverage(symbol, dynamicLeverage);
+      
+      // Place market sell order
+      const order = await this.placeOrder({
+        symbol: symbol,
+        side: 'SELL',
+        type: 'MARKET',
+        quantity: quantity
+      });
+      
+      console.log(`✅ ENHANCED SHORT position opened for ${symbol}:`, {
+        orderId: order.orderId,
+        executedQty: order.executedQty,
+        avgPrice: order.avgPrice,
+        whaleRisk: decision.whaleManipulation.risk
+      });
+      
+      // Set enhanced stop loss and take profit
+      await this.setEnhancedStopLossAndTakeProfit(decision, parseFloat(order.avgPrice), 'SHORT');
+      
+    } catch (error) {
+      console.error(`❌ Error opening enhanced SHORT position for ${decision.symbol}:`, error);
+    }
+  }
+
+  /**
+   * Open long position (BUY) - Legacy method
    */
   private async openLongPosition(decision: TradingDecision): Promise<void> {
     try {
@@ -534,7 +739,180 @@ export class BinanceTradingExecutor {
   }
 
   /**
-   * Set stop loss and take profit orders
+   * Set Enhanced Stop Loss and Take Profit with Multi-level TP
+   */
+  private async setEnhancedStopLossAndTakeProfit(
+    decision: EnhancedTradingDecision, 
+    entryPrice: number, 
+    side: 'LONG' | 'SHORT'
+  ): Promise<void> {
+    try {
+      const symbol = decision.symbol;
+      
+      // Calculate enhanced stop loss based on whale risk
+      let stopLossPrice: number;
+      if (side === 'LONG') {
+        // For longs, stop loss below entry
+        const stopLossPercent = this.calculateDynamicStopLoss(decision);
+        stopLossPrice = entryPrice * (1 - stopLossPercent);
+      } else {
+        // For shorts, stop loss above entry
+        const stopLossPercent = this.calculateDynamicStopLoss(decision);
+        stopLossPrice = entryPrice * (1 + stopLossPercent);
+      }
+
+      // Use AI-recommended stop loss if available and more conservative
+      if (decision.stopLoss) {
+        if (side === 'LONG' && decision.stopLoss > stopLossPrice) {
+          stopLossPrice = decision.stopLoss;
+        } else if (side === 'SHORT' && decision.stopLoss < stopLossPrice) {
+          stopLossPrice = decision.stopLoss;
+        }
+      }
+
+      console.log(`🛡️ Setting enhanced stop loss for ${symbol} at ${stopLossPrice.toFixed(2)} (${side})`);
+
+      // Set stop loss order
+      await this.placeOrder({
+        symbol: symbol,
+        side: side === 'LONG' ? 'SELL' : 'BUY',
+        type: 'MARKET',
+        quantity: '0', // Will be filled by exchange
+        stopPrice: stopLossPrice.toFixed(2),
+        reduceOnly: true
+      });
+
+      // Set multi-level take profit orders
+      await this.setMultiLevelTakeProfit(decision, entryPrice, side);
+
+    } catch (error) {
+      console.error(`❌ Error setting enhanced SL/TP for ${decision.symbol}:`, error);
+    }
+  }
+
+  /**
+   * Set Multi-level Take Profit Orders
+   */
+  private async setMultiLevelTakeProfit(
+    decision: EnhancedTradingDecision,
+    entryPrice: number,
+    side: 'LONG' | 'SHORT'
+  ): Promise<void> {
+    try {
+      const symbol = decision.symbol;
+      const tpLevels = this.tradingConfig.exitStrategy.takeProfitLevels;
+
+      // Use AI-recommended take profit levels if available
+      const aiTakeProfits = decision.takeProfit || [];
+      
+      for (let i = 0; i < Math.min(tpLevels.length, 3); i++) {
+        let tpPrice: number;
+        
+        if (aiTakeProfits[i]) {
+          tpPrice = aiTakeProfits[i];
+        } else {
+          // Calculate TP based on config
+          const tpPercent = tpLevels[i].percent;
+          if (side === 'LONG') {
+            tpPrice = entryPrice * (1 + tpPercent);
+          } else {
+            tpPrice = entryPrice * (1 - tpPercent);
+          }
+        }
+
+        const closePercent = tpLevels[i].closePercent;
+        
+        console.log(`🎯 Setting TP${i + 1} for ${symbol} at ${tpPrice.toFixed(2)} (close ${(closePercent * 100).toFixed(0)}%)`);
+
+        // Note: In real implementation, you'd calculate the exact quantity based on closePercent
+        // For now, we'll set a simple take profit order
+        await this.placeOrder({
+          symbol: symbol,
+          side: side === 'LONG' ? 'SELL' : 'BUY',
+          type: 'LIMIT',
+          quantity: '0', // Should be calculated based on position size and closePercent
+          price: tpPrice.toFixed(2),
+          timeInForce: 'GTC',
+          reduceOnly: true
+        });
+      }
+
+    } catch (error) {
+      console.error(`❌ Error setting multi-level TP for ${decision.symbol}:`, error);
+    }
+  }
+
+  /**
+   * Calculate Dynamic Stop Loss based on Whale Risk
+   */
+  private calculateDynamicStopLoss(decision: EnhancedTradingDecision): number {
+    const baseStopLoss = this.tradingConfig.stopLossPercent;
+    const whaleRisk = decision.whaleManipulation.risk;
+    
+    // Increase stop loss distance during high whale manipulation risk
+    switch (whaleRisk) {
+      case 'CRITICAL':
+        return baseStopLoss * 2.0; // 10% stop loss
+      case 'HIGH':
+        return baseStopLoss * 1.5; // 7.5% stop loss
+      case 'MEDIUM':
+        return baseStopLoss * 1.2; // 6% stop loss
+      default:
+        return baseStopLoss; // 5% stop loss
+    }
+  }
+
+  /**
+   * Close All Positions (Enhanced with reason logging)
+   */
+  private async closeAllPositions(reason: string): Promise<void> {
+    try {
+      console.log(`🚨 CLOSING ALL POSITIONS: ${reason}`);
+      
+      // Update active positions first
+      await this.updateActivePositions();
+      
+      if (this.activePositions.size === 0) {
+        console.log('📊 No active positions to close');
+        return;
+      }
+
+      for (const symbol of Array.from(this.activePositions.keys())) {
+        const position = this.activePositions.get(symbol)!;
+        try {
+          const positionAmt = parseFloat(position.positionAmt);
+          const side = positionAmt > 0 ? 'SELL' : 'BUY'; // Opposite side to close
+          const quantity = Math.abs(positionAmt).toFixed(3);
+
+          console.log(`🔄 Closing position ${symbol}: ${quantity} (${side})`);
+
+          await this.placeOrder({
+            symbol: symbol,
+            side: side,
+            type: 'MARKET',
+            quantity: quantity,
+            reduceOnly: true
+          });
+
+          console.log(`✅ Position closed for ${symbol}`);
+
+        } catch (error) {
+          console.error(`❌ Error closing position for ${symbol}:`, error);
+        }
+      }
+
+      // Clear active positions map
+      this.activePositions.clear();
+      
+      console.log(`✅ All positions closed due to: ${reason}`);
+
+    } catch (error) {
+      console.error('❌ Error closing all positions:', error);
+    }
+  }
+
+  /**
+   * Set stop loss and take profit orders (Legacy method)
    */
   private async setStopLossAndTakeProfit(decision: TradingDecision, entryPrice: number, side: 'LONG' | 'SHORT'): Promise<void> {
     try {
@@ -588,7 +966,8 @@ export class BinanceTradingExecutor {
    * Manage existing positions (check for take profit/stop loss)
    */
   private async manageExistingPositions(): Promise<void> {
-    for (const [symbol, position] of this.activePositions) {
+    for (const symbol of Array.from(this.activePositions.keys())) {
+      const position = this.activePositions.get(symbol)!;
       try {
         const entryPrice = parseFloat(position.entryPrice);
         const markPrice = parseFloat(position.markPrice);
@@ -658,7 +1037,7 @@ export class BinanceTradingExecutor {
   getTradingStatus(): {
     isActive: boolean;
     activePositions: number;
-    config: typeof this.tradingConfig;
+    config: EnhancedTradingConfig;
   } {
     return {
       isActive: this.isActive,
@@ -670,7 +1049,7 @@ export class BinanceTradingExecutor {
   /**
    * Update trading configuration
    */
-  updateConfig(newConfig: Partial<typeof this.tradingConfig>): void {
+  updateConfig(newConfig: Partial<EnhancedTradingConfig>): void {
     this.tradingConfig = { ...this.tradingConfig, ...newConfig };
     console.log('⚙️ Trading configuration updated:', this.tradingConfig);
   }
@@ -689,7 +1068,8 @@ export class BinanceTradingExecutor {
   }> {
     const summary = [];
     
-    for (const [symbol, position] of this.activePositions) {
+    for (const symbol of Array.from(this.activePositions.keys())) {
+      const position = this.activePositions.get(symbol)!;
       const positionAmt = parseFloat(position.positionAmt);
       const entryPrice = parseFloat(position.entryPrice);
       const markPrice = parseFloat(position.markPrice);
@@ -709,9 +1089,46 @@ export class BinanceTradingExecutor {
     
     return summary;
   }
+
+
+
+  /**
+   * Enhanced position monitoring with whale awareness
+   */
+  private async monitorPositionsWithWhaleAwareness(): Promise<void> {
+    try {
+      await this.updateActivePositions();
+      
+      for (const symbol of Array.from(this.activePositions.keys())) {
+        const position = this.activePositions.get(symbol)!;
+        // Get fresh whale analysis for position monitoring
+        try {
+          const enhancedData = await this.enhancedDataCollector.collectEnhancedMarketData(symbol);
+          // Simple whale detection scores (placeholder)
+          const scores = {
+            setupScore: 0,
+            triggerScore: 0,
+            executionScore: 0
+          };
+          
+          // Check if we should emergency exit due to whale activity
+          if (scores.executionScore > 80) {
+            console.log(`🚨 EMERGENCY EXIT for ${symbol}: Whale execution detected (${scores.executionScore}%)`);
+            await this.closePosition(symbol);
+          }
+          
+        } catch (error) {
+          console.error(`❌ Error monitoring whale activity for ${symbol}:`, error);
+        }
+      }
+      
+    } catch (error) {
+      console.error(`❌ Error in enhanced position monitoring:`, error);
+    }
+  }
 }
 
-// Create singleton instance
+// Singleton instance
 let tradingExecutor: BinanceTradingExecutor | null = null;
 
 export function getBinanceTradingExecutor(): BinanceTradingExecutor {

@@ -37,6 +37,46 @@ export interface RiskConfig {
   emergencyStopEnabled: boolean;
 }
 
+export interface AdvancedRiskConfig extends RiskConfig {
+  // Dynamic stop-loss settings
+  baseStopLossPercentage: number;
+  volatilityMultiplier: number;
+  maxStopLossPercentage: number;
+  minStopLossPercentage: number;
+  
+  // Correlation settings
+  maxCorrelationThreshold: number;
+  correlationLookbackPeriod: number;
+  
+  // Drawdown protection
+  maxDrawdownPercentage: number;
+  drawdownStopTradingThreshold: number;
+  drawdownRecoveryThreshold: number;
+}
+
+export interface VolatilityMetrics {
+  symbol: string;
+  volatility: number;
+  averageVolatility: number;
+  volatilityPercentile: number;
+  timestamp: Date;
+}
+
+export interface CorrelationMatrix {
+  [symbol: string]: {
+    [otherSymbol: string]: number;
+  };
+}
+
+export interface DrawdownMetrics {
+  currentDrawdown: number;
+  maxDrawdown: number;
+  peakValue: number;
+  currentValue: number;
+  drawdownDuration: number;
+  recoveryTime?: number;
+}
+
 export interface TradingBotConfig {
   nebius: NebiusConfig;
   gate: GateConfig;

@@ -131,7 +131,8 @@ export class PerformanceTracker {
     let totalRealizedPnL = 0;
     
     // Calculate P&L for each symbol
-    for (const [symbol, symbolTrades] of tradesBySymbol) {
+    for (const symbol of Array.from(tradesBySymbol.keys())) {
+      const symbolTrades = tradesBySymbol.get(symbol)!;
       totalRealizedPnL += this.calculateSymbolPnL(symbolTrades);
     }
     

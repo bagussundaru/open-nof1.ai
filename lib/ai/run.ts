@@ -1,23 +1,68 @@
 import { getMarketAnalyzer } from './market-analyzer';
 import { getNebiusAIService } from './nebius-ai-service';
 import { DatabaseService } from '@/lib/trading-bot/database/database-service';
+import { getEnhancedDataCollector } from '@/lib/market-data/enhanced-data-collector';
+import { generateWhaleDetectionPrompt } from './whale-detection-prompt';
+import { getBinanceClient } from '@/lib/exchanges/binance-futures-client';
 
 // Trading symbols to analyze
 const TRADING_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'ADAUSDT', 'DOGEUSDT'];
 
 export async function runAIAnalysis() {
   try {
-    console.log('🚀 Starting Nebius AI Trading Analysis...');
+    console.log('🚀 Starting Enhanced Nebius AI Trading Analysis with Whale Detection...');
     
     const marketAnalyzer = getMarketAnalyzer();
     const nebiusAI = getNebiusAIService();
+    const binanceClient = getBinanceClient();
+    const enhancedDataCollector = getEnhancedDataCollector();
     
     // Test Nebius AI connection first
     const isNebiusConnected = await nebiusAI.testConnection();
     console.log(`🔗 Nebius AI connection: ${isNebiusConnected ? 'Connected' : 'Failed'}`);
     
-    // Analyze multiple symbols using Nebius AI
-    const analyses = await marketAnalyzer.analyzeMultipleSymbols(TRADING_SYMBOLS);
+    // Enhanced analysis with whale detection
+    const analyses = [];
+    
+    for (const symbol of TRADING_SYMBOLS) {
+      try {
+        console.log(`🐋 Enhanced analysis for ${symbol}...`);
+        
+        // Collect enhanced market data
+        const enhancedData = await enhancedDataCollector.collectEnhancedMarketData(symbol);
+        
+        // Generate whale detection prompt
+        const whalePrompt = generateWhaleDetectionPrompt(enhancedData);
+        
+        // Get AI analysis with whale detection
+        let whaleAnalysis;
+        if (isNebiusConnected) {
+          try {
+            const aiResponse = await nebiusAI.analyzeWithPrompt(whalePrompt);
+            whaleAnalysis = typeof aiResponse === 'string' ? JSON.parse(aiResponse) : aiResponse;
+          } catch (aiError) {
+            console.warn(`⚠️ Whale AI analysis failed for ${symbol}, using fallback:`, aiError);
+            // Fallback to regular analysis
+            whaleAnalysis = await marketAnalyzer.analyzeSingleSymbol(symbol);
+          }
+        } else {
+          // Fallback to regular analysis
+          whaleAnalysis = await marketAnalyzer.analyzeSingleSymbol(symbol);
+        }
+        
+        analyses.push(whaleAnalysis);
+        
+      } catch (error) {
+        console.error(`❌ Error in enhanced analysis for ${symbol}:`, error);
+        // Fallback to regular analysis
+        try {
+          const fallbackAnalysis = await marketAnalyzer.analyzeSingleSymbol(symbol);
+          analyses.push(fallbackAnalysis);
+        } catch (fallbackError) {
+          console.error(`❌ Fallback analysis also failed for ${symbol}:`, fallbackError);
+        }
+      }
+    }
     
     // Store analyses in database
     const storedAnalyses = [];

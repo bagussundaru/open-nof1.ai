@@ -444,7 +444,8 @@ export class NotificationService extends EventEmitter {
     const cutoffTime = new Date(Date.now() - (olderThanHours * 60 * 60 * 1000));
     let clearedCount = 0;
     
-    for (const [id, alert] of this.alerts) {
+    for (const id of Array.from(this.alerts.keys())) {
+      const alert = this.alerts.get(id)!;
       if (alert.timestamp < cutoffTime && alert.acknowledged) {
         this.alerts.delete(id);
         clearedCount++;

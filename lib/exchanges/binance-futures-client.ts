@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 
 export interface BinanceBalance {
   asset: string;
@@ -72,6 +72,79 @@ export class BinanceFuturesClient {
     this.baseUrl = testnet 
       ? 'https://testnet.binancefuture.com'
       : 'https://fapi.binance.com';
+  }
+
+  // ===== NEW: WHALE DETECTION ENDPOINTS =====
+  
+  /**
+   * Get Open Interest for whale detection
+   */
+  async getOpenInterest(symbol: string): Promise<any> {
+    return this.makeRequest('/fapi/v1/openInterest', { symbol });
+  }
+
+  /**
+   * Get Funding Rate for manipulation detection
+   */
+  async getFundingRate(symbol: string, limit: number = 100): Promise<any> {
+    return this.makeRequest('/fapi/v1/fundingRate', { symbol, limit });
+  }
+
+  /**
+   * Get Long/Short Ratio for retail sentiment
+   */
+  async getLongShortRatio(symbol: string, period: string = '5m', limit: number = 30): Promise<any> {
+    return this.makeRequest('/fapi/v1/globalLongShortAccountRatio', { symbol, period, limit });
+  }
+
+  /**
+   * Get Top Trader Long/Short Ratio for smart money sentiment
+   */
+  async getTopTraderLongShortRatio(symbol: string, period: string = '5m', limit: number = 30): Promise<any> {
+    return this.makeRequest('/fapi/v1/topLongShortAccountRatio', { symbol, period, limit });
+  }
+
+  /**
+   * Get Taker Long/Short Ratio for aggressive trading sentiment
+   */
+  async getTakerLongShortRatio(symbol: string, period: string = '5m', limit: number = 30): Promise<any> {
+    return this.makeRequest('/fapi/v1/takerlongshortRatio', { symbol, period, limit });
+  }
+
+  /**
+   * Get Order Book for spoofing detection
+   */
+  async getOrderBook(symbol: string, limit: number = 1000): Promise<any> {
+    return this.makeRequest('/fapi/v1/depth', { symbol, limit });
+  }
+
+  /**
+   * Get Aggregate Trades for CVD calculation
+   */
+  async getAggTrades(symbol: string, limit: number = 1000): Promise<any> {
+    return this.makeRequest('/fapi/v1/aggTrades', { symbol, limit });
+  }
+
+  /**
+   * Get Kline/Candlestick data for technical analysis
+   */
+  async getKlines(symbol: string, interval: string = '1m', limit: number = 500): Promise<any> {
+    return this.makeRequest('/fapi/v1/klines', { symbol, interval, limit });
+  }
+
+  /**
+   * Get Mark Price and Funding Rate
+   */
+  async getMarkPrice(symbol?: string): Promise<any> {
+    const params = symbol ? { symbol } : {};
+    return this.makeRequest('/fapi/v1/premiumIndex', params);
+  }
+
+  /**
+   * Get Open Interest Statistics
+   */
+  async getOpenInterestStats(symbol: string, period: string = '5m', limit: number = 30): Promise<any> {
+    return this.makeRequest('/fapi/v1/openInterestHist', { symbol, period, limit });
   }
 
   private createSignature(queryString: string): string {

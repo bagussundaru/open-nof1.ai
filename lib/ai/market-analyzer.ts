@@ -44,6 +44,33 @@ export class MarketAnalyzer {
   private binanceClient = getBinanceClient();
   private nebiusAI = getNebiusAIService();
 
+  /**
+   * NEW: Analyze multiple symbols with enhanced whale detection
+   */
+  async analyzeMultipleSymbolsEnhanced(symbols: string[]): Promise<any[]> {
+    try {
+      console.log(`🐋 Enhanced analysis for ${symbols.length} symbols with whale detection...`);
+      
+      const analyses = [];
+      
+      for (const symbol of symbols) {
+        try {
+          // This will be called by the enhanced trading executor
+          // For now, we'll use the existing method as fallback
+          const analysis = await this.analyzeSingleSymbol(symbol);
+          analyses.push(analysis);
+        } catch (error) {
+          console.error(`❌ Error analyzing ${symbol}:`, error);
+        }
+      }
+      
+      return analyses;
+    } catch (error) {
+      console.error('❌ Error in enhanced multi-symbol analysis:', error);
+      throw error;
+    }
+  }
+
   async getMarketData(symbol: string): Promise<MarketData> {
     try {
       const [ticker24hr, currentPrice] = await Promise.all([
